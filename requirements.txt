@@ -1,4 +1,9 @@
 openai-agents
 
-"pymongo[srv]"
+pymongo[srv]
 
+FastAPI
+
+pydantic
+
+uvicorn

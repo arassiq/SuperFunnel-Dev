@@ -1,0 +1,21 @@
+# Ignore Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore local venvs
+venv/
+.env
+
+# Ignore version control
+.git/
+.gitignore
+
+# Ignore IDE/editor junk
+.vscode/
+*.swp
+.DS_Store
+
+# Ignore Docker-specific stuff you don’t want in image
+docker-compose.yml

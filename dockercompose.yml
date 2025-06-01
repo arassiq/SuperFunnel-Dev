@@ -1,0 +1,21 @@
+version: '3'
+services:
+  app:
+    build: .
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - MONGO_URI= mongodb+srv://amrassiq:${MONGO_SECURE_PASSWORD}@testing.dth0i.mongodb.net/?retryWrites=true&w=majority&appName=Testing
+    volumes:
+      - .:/app
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo:6
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+volumes:
+  mongo-data:

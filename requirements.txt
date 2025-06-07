@@ -7,3 +7,5 @@ FastAPI
 pydantic
 
 uvicorn
+
+python-dotenv

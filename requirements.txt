@@ -1,7 +1,5 @@
 openai-agents
 
-pymongo[srv]
-
 FastAPI
 
 pydantic

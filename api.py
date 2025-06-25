@@ -2,6 +2,7 @@ import fastapi
 from pydantic import BaseModel
 from typing import List
 import uvicorn
+from typing import Optional
 
 import fastapi
 from pydantic import BaseModel
@@ -21,16 +22,31 @@ from agents import (
 
 import json
 import os
-
+from fastapi import FastAPI, Header, Body
 
 import psycopg2
 from dotenv import load_dotenv
 
+from fastapi.middleware.cors import CORSMiddleware
 
 import datetime
 
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
+
+app = FastAPI()
+
+@app.get("/")
+def root():
+    return {"message": "it works!"}
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # set to your frontend domain
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 #SUPABASE_URL = "https://your-project.supabase.co"
 #SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")  
@@ -46,8 +62,10 @@ class mainTask(BaseModel):
     estimatedTime: str
     createdAt: str
 
-
-def runTaskGen(userAuthHeader, usrTaskInput: str) -> json:
+@app.post("/runTaskGen")
+def runTaskGen():
+    userAuthHeader: Optional[str] = Header(None), 
+    usrTaskInput: str = Body(...)
 
     '''
         TODO:
@@ -143,7 +161,7 @@ def runTaskGen(userAuthHeader, usrTaskInput: str) -> json:
         return json.dumps(agent_taskGenOut)
 
     except Exception as e:
-        print(f"Failed to connect: {e}")
+        return f"Failed to connect: {e}"
 
     
     

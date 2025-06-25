@@ -163,8 +163,6 @@ def runTaskGen():
     except Exception as e:
         return f"Failed to connect: {e}"
 
-    
-    
 def main():
     input = """
 

@@ -63,10 +63,10 @@ class mainTask(BaseModel):
     createdAt: str
 
 @app.post("/runTaskGen")
-def runTaskGen():
-    userAuthHeader: Optional[str] = Header(None), 
-    usrTaskInput: str = Body(...)
-
+def runTaskGen(
+    usrTaskInput: str = Body(...),
+    userAuthHeader: Optional[str] = Header(None)
+    ):
     '''
         TODO:
             - integrate auth = userAuthHeader -> authAPI -> UserID

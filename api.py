@@ -119,7 +119,7 @@ def runTaskGen(
             output_type=mainTask
         )
 
-        agent_taskGenOut = (Runner.run_sync(agent_taskGen, usrTaskInput).final_output).model_dump()
+        agent_taskGenOut = (Runner.run(agent_taskGen, usrTaskInput).final_output).model_dump()
 
         print(agent_taskGenOut)
 

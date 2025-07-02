@@ -75,12 +75,13 @@ def runTaskGen():
     ''' 
 
     userID = userAuthHeader
-
-    USER = os.getenv("user") 
-    PASSWORD = os.getenv("password")
-    HOST = os.getenv("host")
-    PORT = os.getenv("port")
-    DBNAME = os.getenv("dbname")
+    '''    
+        USER = os.getenv("user") 
+        PASSWORD = os.getenv("password")
+        HOST = os.getenv("host")
+        PORT = os.getenv("port")
+        DBNAME = os.getenv("dbname")
+    '''
 
     # Connect to the database
     try:

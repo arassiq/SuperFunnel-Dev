@@ -119,7 +119,8 @@ async def runTaskGen(
             output_type=mainTask
         )
 
-        agent_taskGenOut = await (Runner.run(agent_taskGen, usrTaskInput).final_output).model_dump()
+        result = await Runner.run(agent_taskGen, usrTaskInput)
+        agent_taskGenOut = result.final_output.model_dump()
 
         print(agent_taskGenOut)
 
@@ -170,9 +171,9 @@ def main():
         2.d. WITS
 
     """
-    runTaskGen("123e4567-e89b-12d3-a456-426614174000", input)
+    # runTaskGen("123e4567-e89b-12d3-a456-426614174000", input)
 
 if __name__ == "__main__":
-    #main()
+    # main()
     pass
     

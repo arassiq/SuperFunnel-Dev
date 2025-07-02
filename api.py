@@ -84,13 +84,7 @@ def runTaskGen():
 
     # Connect to the database
     try:
-        connection = psycopg2.connect(
-            user=USER,
-            password=PASSWORD,
-            host=HOST,
-            port=PORT,
-            dbname=DBNAME
-        )
+        connection = psycopg2.connect(os.getenv("DBURISTRING"))
         print("Connection successful!")
         
         cursor = connection.cursor()

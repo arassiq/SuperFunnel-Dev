@@ -1,12 +1,13 @@
 import fastapi
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from uuid import UUID
 from typing import List
 import uvicorn
 from typing import Optional
 
 import fastapi
 from pydantic import BaseModel
-from typing import List
+from typing import List, Literal
 import uvicorn
 import requests
 
@@ -22,17 +23,23 @@ from agents import (
 
 import json
 import os
-from fastapi import FastAPI, Header, Body
+from fastapi import FastAPI, Header, Body, HTTPException
 
 import psycopg2
 from dotenv import load_dotenv
+
+from supabase import create_client
 
 from fastapi.middleware.cors import CORSMiddleware
 
 import datetime
 
 load_dotenv()
-api_key = os.getenv("OPENAI_API_KEY")
+OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_ANON_KEY = os.environ["SUPABASE_ANON_KEY"]
+
 
 app = FastAPI()
 
@@ -51,113 +58,106 @@ app.add_middleware(
 #SUPABASE_URL = "https://your-project.supabase.co"
 #SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")  
 
-class mainTask(BaseModel):
-    id: str
+
+class TaskCreate(BaseModel):
     content: str
-    aiGeneratedSubtasks: List[str]
-    labels: List[str]
-    deadlineType: str
-    deadline: str
-    priority: int
-    estimatedTime: str
-    createdAt: str
+    ai_generated_subtasks: List[str] = Field(default_factory=list)
+    labels: List[str] = Field(default_factory=list)
+    deadline_type: Literal['soft', 'hard'] | None = None
+    deadline: str | None = None
+    priority: int | None = Field(default=None, ge=1, le=10)
+    estimated_time: str | None = None
 
+class usr_task_in(BaseModel):
+    title: str
+    description: str
+
+def as_user_client(jwt: str):
+    '''
+validates and returns secure client connection with db and stuff
+    '''
+    return create_client(
+        SUPABASE_URL,
+        SUPABASE_ANON_KEY,
+        options={"global": {"headers": {"Authorization": f"Bearer {jwt}"}}}
+    )
 @app.post("/runTaskGen")
-async def runTaskGen(
-    usrTaskInput: str = Body(...),
-    userAuthHeader: Optional[str] = Header(None)
-    ):
-    '''
-        TODO:
-            - integrate auth = userAuthHeader -> authAPI -> UserID
-            - use the UserID for db insertion instead of sudo id
+async def run_task_gen(
+    task: usr_task_in,
+    authorization: str = Header(...)
+):
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    usrJWT = authorization.split(" ", 1)[1]
 
-    ''' 
+    verifier = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    got = verifier.auth.get_user(usrJWT)
+    if not getattr(got, "user", None):
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user_id = got.user.id
 
-    userID = userAuthHeader
-    '''    
-        USER = os.getenv("user") 
-        PASSWORD = os.getenv("password")
-        HOST = os.getenv("host")
-        PORT = os.getenv("port")
-        DBNAME = os.getenv("dbname")
-    '''
+    AGENT_INSTRUCTIONS = f"""
+        You are a task planning assistant. You will receive a plaintext list of to-do items or goals.
+        Return a **JSON object** with exactly these snake_case fields:
 
-    # Connect to the database
+        {{
+        "content": string,
+        "ai_generated_subtasks": [string, ...],
+        "labels": [string, ...],
+        "deadline_type": "soft" | "hard" | null,
+        "deadline": string | null,          // ISO-8601 date or datetime
+        "priority": integer | null,         // 1..10 or null
+        "estimated_time": string | null
+        }}
+
+        HARD REQUIREMENTS:
+        - Output **only** a JSON object; no extra text, no markdown.
+        - Do NOT include: id, user_id, created_at.
+        - If a value is unknown, use null (do not invent).
+        - For relative dates like "next Friday", convert to an absolute ISO-8601 value using the current date.
+        Current local datetime: {datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()}
+        """
+
+    agent = Agent(name="TaskStructurer", instructions=AGENT_INSTRUCTIONS, output_type=None)
+    agent_input = f"Task Title: {task.title}\nTask Description: {task.description}"
+    result = await Runner.run(agent, agent_input)
+
+
+    try:
+        raw = result.final_output if isinstance(result.final_output, str) else result.final_output
+        obj = json.loads(raw)
+    except Exception:
+        raise HTTPException(400, "Agent did not return valid JSON")
+
+    try:
+        t = TaskCreate.model_validate(obj)
+    except Exception as e:
+        raise HTTPException(400, f"Agent output failed schema validation: {e}")
+
+    payload = t.model_dump(exclude_none=True)
+    if isinstance(payload.get("labels"), list):
+        payload["labels"] = json.dumps(payload["labels"], ensure_ascii=False)
+    if isinstance(payload.get("ai_generated_subtasks"), list):
+        payload["ai_generated_subtasks"] = json.dumps(payload["ai_generated_subtasks"], ensure_ascii=False)
+
+    payload["user_id"] = user_id
+
+    sb = as_user_client(usrJWT)
+    resp = sb.table("tasks").insert(payload).select("*").single().execute()
+    if resp.error:
+        raise HTTPException(status_code=400, detail=resp.error.message)
+
+    return resp.data
+
+@app.post("/delete_user")
+def delete_user(userid):
     try:
         connection = psycopg2.connect(os.getenv("DBURISTRING"))
         print("Connection successful!")
         
-        cursor = connection.cursor()
-
-        cursor.execute("SELECT id FROM users WHERE id = %s;", (userID,))
-        result = cursor.fetchone()
-
-        if result is None:
-            cursor.execute("INSERT INTO users (id) VALUES (%s);", (userID,))
-            connection.commit()
-        
-        agent_taskGen = Agent(
-            name="TaskStructurer",
-            instructions="""
-                You are a task planning assistant. Your job is to take a plaintext list of to-do items or goals from the user and return a structured list of JSON objects. Each object should conform to the following structure:
-
-                {
-                "id": "<unique id for this task>",
-                "content": "<the original user-entered task text>",
-                "aiGeneratedSubtasks": ["<step 1>", "<step 2>", "..."],
-                "labels": ["<category or tag>", "..."],
-                "deadlineType": "<either 'soft' or 'hard' no other value>",
-                "deadline": "<ISO date string or natural language deadline like 'next Friday'>",
-                "priority": <integer between 1 (low) and 10 (high)>,
-                "estimatedTime": "<estimated time to complete, like '2 hours' or '1-2 days'>",
-                "createdAt": "<timestamp of when the task was created, ideally ISO format>"
-                }
-
-                Return one JSON object for each to-do item the user provides. Use your best judgment to infer subtasks, estimate completion time, and categorize the task. Do not stray from the file structure, nor reply with any other text. make sure to look at the current date time and adjust all your outputs based on the date time inputted:
-            """ + f"current date, time: {datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()}",
-            output_type=mainTask
-        )
-
-        result = await Runner.run(agent_taskGen, usrTaskInput)
-        agent_taskGenOut = result.final_output.model_dump()
-
-        print(agent_taskGenOut)
-
-        cursor.execute("""
-        INSERT INTO tasks (
-            user_id,
-            content,
-            ai_generated_subtasks,
-            labels,
-            deadline_type,
-            deadline,
-            priority,
-            estimated_time,
-            created_at
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
-        """, (
-            userID, #TODO CHANGE FOR THE AUTH API USERID 
-            agent_taskGenOut["content"],
-            agent_taskGenOut["aiGeneratedSubtasks"],
-            agent_taskGenOut["labels"],
-            agent_taskGenOut["deadlineType"],
-            agent_taskGenOut["deadline"],
-            agent_taskGenOut["priority"],
-            agent_taskGenOut["estimatedTime"],
-            agent_taskGenOut["createdAt"]
-        ))
-        connection.commit()
-
-        cursor.close()
-        connection.close()
-        print("Connection closed.")
-
-        return json.dumps(agent_taskGenOut)
 
     except Exception as e:
-        return f"Failed to connect: {e}"
+        raise 
 '''
 def main():
     input = """

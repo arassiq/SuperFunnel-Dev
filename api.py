@@ -65,7 +65,7 @@ class TaskCreate(BaseModel):
     labels: List[str] = Field(default_factory=list)
     deadline_type: Literal['soft', 'hard'] | None = None
     deadline: str | None = None
-    priority: int | None = Field(default=None, ge=1, le=10)
+    priority: float | None = Field(default=None, ge=1, le=10)
     estimated_time: str | None = None
 
 class usr_task_in(BaseModel):

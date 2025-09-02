@@ -106,7 +106,7 @@ async def run_task_gen(
         "labels": [string, ...],
         "deadline_type": "soft" | "hard" | null,
         "deadline": string | null,          // ISO-8601 date or datetime
-        "priority": integer | null,         // 1..10 or null
+        "priority": float | null,         // 1..10, with 1 being the highest priority and 10 being the lowest priority or null
         "estimated_time": string | null
         }}
 

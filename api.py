@@ -39,6 +39,7 @@ OPENAI_KEY = os.getenv("OPENAI_API_KEY")
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_ANON_KEY = os.environ["SUPABASE_ANON_KEY"]
+SUPABASE_SERVICE_ROLE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 
 
 app = FastAPI()
@@ -81,6 +82,22 @@ validates and returns secure client connection with db and stuff
         SUPABASE_ANON_KEY,
         options={"global": {"headers": {"Authorization": f"Bearer {jwt}"}}}
     )
+
+
+def verify_jwt_and_get_user_id(authorization: str) -> str:
+    """Verifies JWT token and returns the user ID."""
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    
+    usrJWT = authorization.split(" ", 1)[1]
+    verifier = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    got = verifier.auth.get_user(usrJWT)
+    
+    if not getattr(got, "user", None):
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    return got.user.id
+
 @app.post("/runTaskGen")
 async def run_task_gen(
     task: usr_task_in,
@@ -149,15 +166,46 @@ async def run_task_gen(
 
     return resp.data
 
-@app.post("/delete_user")
-def delete_user(userid):
-    try:
-        connection = psycopg2.connect(os.getenv("DBURISTRING"))
-        print("Connection successful!")
-        
+@app.delete("/api/v1/users/{user_id}")
+async def delete_user(
+    user_id: str,
+    authorization: str = Header(...)
+):
+    """Delete a user from Supabase using their user ID. Requires admin access."""
+    verify_jwt_and_get_user_id(authorization)
 
+    # Create admin client with service role key
+    admin_client = create_client(
+        SUPABASE_URL,
+        SUPABASE_SERVICE_ROLE_KEY,
+        {
+            "auth": {
+                "autoRefreshToken": False,
+                "persistSession": False
+            }
+        }
+    )
+
+    try:
+        response = await admin_client.auth.admin.deleteUser(
+            id=user_id,
+            shouldSoftDelete=False
+        )
+        
+        if response.get("error"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to delete user: {response.get('error').message}"
+            )
+        
+        return {"message": f"User {user_id} successfully deleted"}
+    
     except Exception as e:
-        raise 
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error deleting user: {str(e)}"
+        )
+
 '''
 def main():
     input = """

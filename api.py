@@ -98,7 +98,7 @@ def verify_jwt_and_get_user_id(authorization: str) -> str:
     
     return got.user.id
 
-@app.post("/runTaskGen")
+@app.post("/api/v1/tasks/create")
 async def run_task_gen(
     task: usr_task_in,
     authorization: str = Header(...)
@@ -171,8 +171,16 @@ async def delete_user(
     user_id: str,
     authorization: str = Header(...)
 ):
-    """Delete a user from Supabase using their user ID. Requires admin access."""
-    verify_jwt_and_get_user_id(authorization)
+    """Delete a user from Supabase using their user ID. Requires admin access and matching user ID."""
+    # Verify JWT and get user ID from token
+    jwt_user_id = verify_jwt_and_get_user_id(authorization)
+
+    # Check if the user_id from JWT matches the user_id in the API path
+    if jwt_user_id != user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Unauthorized: User ID from token does not match the provided user ID"
+        )
 
     # Create admin client with service role key
     admin_client = create_client(

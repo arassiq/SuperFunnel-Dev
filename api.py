@@ -58,13 +58,14 @@ app.add_middleware(
 
 
 class TaskCreate(BaseModel):
-    content: str
+    title: str
+    description: str
     ai_generated_subtasks: List[str] = Field(default_factory=list)
     labels: List[str] = Field(default_factory=list)
     deadline_type: Literal['soft', 'hard'] | None = None
-    deadline: str | None = None
+    due_date: str | None = None
     priority: int | None = Field(default=None, ge=1, le=10)
-    estimated_time: str | None = None
+    # estimated_time: str | None = None
 
 class usr_task_in(BaseModel):
     title: str
@@ -104,13 +105,13 @@ async def run_task_gen(
         Return a **JSON object** with exactly these snake_case fields:
 
         {{
-        "content": string,
-        "ai_generated_subtasks": [string, ...],
-        "labels": [string, ...],
-        "deadline_type": "soft" | "hard" | null,
-        "deadline": string | null,          // ISO-8601 date or datetime
-        "priority": integer | null,         // 1..10 or null
-        "estimated_time": string | null
+            "title": string,
+            "description": string,
+            "ai_generated_subtasks": [string, ...],
+            "labels": [string, ...],
+            "deadline_type": "soft" | "hard" | null,
+            "due_date": string | null,          // ISO-8601 date or datetime
+            "priority": integer,         // 1 - 10, lower numbers are higher priority
         }}
 
         HARD REQUIREMENTS:
@@ -137,10 +138,14 @@ async def run_task_gen(
         raise HTTPException(400, f"Agent output failed schema validation: {e}")
 
     payload = t.model_dump(exclude_none=True)
-    if isinstance(payload.get("labels"), list):
-        payload["labels"] = json.dumps(payload["labels"], ensure_ascii=False)
-    if isinstance(payload.get("ai_generated_subtasks"), list):
-        payload["ai_generated_subtasks"] = json.dumps(payload["ai_generated_subtasks"], ensure_ascii=False)
+
+    payload['title'] = task.title
+    payload['description'] = task.description
+
+    # if isinstance(payload.get("labels"), list):
+    #     payload["labels"] = json.dumps(payload["labels"], ensure_ascii=False)
+    # if isinstance(payload.get("ai_generated_subtasks"), list):
+    #     payload["ai_generated_subtasks"] = json.dumps(payload["ai_generated_subtasks"], ensure_ascii=False)
 
     resp = (
         supabase.table("tasks")

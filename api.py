@@ -29,6 +29,8 @@ import psycopg2
 from dotenv import load_dotenv
 
 from supabase import create_client
+from supabase.client import ClientOptions
+
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -36,11 +38,9 @@ import datetime
 
 load_dotenv()
 OPENAI_KEY = os.getenv("OPENAI_API_KEY")
-
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_ANON_KEY = os.environ["SUPABASE_ANON_KEY"]
 SUPABASE_SERVICE_ROLE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-
 
 app = FastAPI()
 
@@ -56,9 +56,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-#SUPABASE_URL = "https://your-project.supabase.co"
-#SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")  
-
 
 class TaskCreate(BaseModel):
     content: str
@@ -73,45 +70,34 @@ class usr_task_in(BaseModel):
     title: str
     description: str
 
-def as_user_client(jwt: str):
-    '''
-validates and returns secure client connection with db and stuff
-    '''
-    return create_client(
-        SUPABASE_URL,
-        SUPABASE_ANON_KEY,
-        options={"global": {"headers": {"Authorization": f"Bearer {jwt}"}}}
-    )
 
-
-def verify_jwt_and_get_user_id(authorization: str) -> str:
-    """Verifies JWT token and returns the user ID."""
+def extract_jwt(authorization: str) -> str:
+    """Extracts JWT from Authorization header."""
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
-    
-    usrJWT = authorization.split(" ", 1)[1]
-    verifier = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-    got = verifier.auth.get_user(usrJWT)
-    
-    if not getattr(got, "user", None):
-        raise HTTPException(status_code=401, detail="Invalid token")
-    
-    return got.user.id
+    return authorization.split(" ", 1)[1]
+
+def init_database(authorization: str) -> str:
+    usrJWT = extract_jwt(authorization)
+
+    options = ClientOptions(headers={
+        "Authorization": f"Bearer {usrJWT}"
+    })
+
+    supabase = create_client(
+        SUPABASE_URL,
+        SUPABASE_ANON_KEY,
+        options=options
+    )
+
+    return supabase
 
 @app.post("/api/v1/tasks/create")
 async def run_task_gen(
     task: usr_task_in,
     authorization: str = Header(...)
 ):
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
-    usrJWT = authorization.split(" ", 1)[1]
-
-    verifier = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-    got = verifier.auth.get_user(usrJWT)
-    if not getattr(got, "user", None):
-        raise HTTPException(status_code=401, detail="Invalid token")
-    user_id = got.user.id
+    supabase = init_database(authorization)
 
     AGENT_INSTRUCTIONS = f"""
         You are a task planning assistant. You will receive a plaintext list of to-do items or goals.
@@ -139,7 +125,6 @@ async def run_task_gen(
     agent_input = f"Task Title: {task.title}\nTask Description: {task.description}"
     result = await Runner.run(agent, agent_input)
 
-
     try:
         raw = result.final_output if isinstance(result.final_output, str) else result.final_output
         obj = json.loads(raw)
@@ -157,57 +142,42 @@ async def run_task_gen(
     if isinstance(payload.get("ai_generated_subtasks"), list):
         payload["ai_generated_subtasks"] = json.dumps(payload["ai_generated_subtasks"], ensure_ascii=False)
 
-    payload["user_id"] = user_id
+    resp = (
+        supabase.table("tasks")
+        .insert(payload)
+        .execute()
+    )
 
-    sb = as_user_client(usrJWT)
-    resp = sb.table("tasks").insert(payload).select("*").single().execute()
-    if resp.error:
-        raise HTTPException(status_code=400, detail=resp.error.message)
-
-    return resp.data
+    return resp
 
 @app.delete("/api/v1/users/{user_id}")
 async def delete_user(
     user_id: str,
     authorization: str = Header(...)
 ):
-    """Delete a user from Supabase using their user ID. Requires admin access and matching user ID."""
-    # Verify JWT and get user ID from token
-    jwt_user_id = verify_jwt_and_get_user_id(authorization)
+    usrJWT = extract_jwt(authorization)
+    supabase = init_database(authorization)
+
+    user = supabase.auth.get_user(usrJWT)
 
     # Check if the user_id from JWT matches the user_id in the API path
-    if jwt_user_id != user_id:
+    if user.user.id != user_id:
         raise HTTPException(
             status_code=403,
-            detail="Unauthorized: User ID from token does not match the provided user ID"
+            detail="Unauthorized: User IDs don't match"
         )
 
     # Create admin client with service role key
     admin_client = create_client(
         SUPABASE_URL,
         SUPABASE_SERVICE_ROLE_KEY,
-        {
-            "auth": {
-                "autoRefreshToken": False,
-                "persistSession": False
-            }
-        }
     )
 
     try:
-        response = await admin_client.auth.admin.deleteUser(
+        admin_client.auth.admin.delete_user(
             id=user_id,
-            shouldSoftDelete=False
+            shouldSoftDelete=True
         )
-        
-        if response.get("error"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Failed to delete user: {response.get('error').message}"
-            )
-        
-        return {"message": f"User {user_id} successfully deleted"}
-    
     except Exception as e:
         raise HTTPException(
             status_code=500,

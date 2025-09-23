@@ -111,7 +111,7 @@ async def run_task_gen(
             "labels": [string, ...],
             "deadline_type": "soft" | "hard" | null,
             "due_date": string | null,          // ISO-8601 date or datetime
-            "priority": integer,         // 1 - 10, lower numbers are higher priority
+            "priority": integer,         // integer between 1 and 10 (never null), lower numbers are higher priority
         }}
 
         HARD REQUIREMENTS:
@@ -141,6 +141,8 @@ async def run_task_gen(
 
     payload['title'] = task.title
     payload['description'] = task.description
+    payload['priority'] = 5 if payload.get('priority') == None else payload['priority'] #can use "p['prio'] ==" if we are confident in pydantic
+        
 
     # if isinstance(payload.get("labels"), list):
     #     payload["labels"] = json.dumps(payload["labels"], ensure_ascii=False)
@@ -201,7 +203,7 @@ def main():
         2.c.  OSIC
         2.d. WITS
 
-    """
+    ""
     # runTaskGen("123e4567-e89b-12d3-a456-426614174000", input)
 
 if __name__ == "__main__":

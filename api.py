@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from typing import List, Literal
 import uvicorn
 import requests
+import asyncio
 
 from agents import (
     Agent,
@@ -126,21 +127,28 @@ async def run_task_gen(
     agent_input = f"Task Title: {task.title}\nTask Description: {task.description}"
     result = await Runner.run(agent, agent_input)
 
-    try:
-        raw = result.final_output if isinstance(result.final_output, str) else result.final_output
-        obj = json.loads(raw)
-    except Exception:
-        raise HTTPException(400, "Agent did not return valid JSON")
+    fo = result.final_output
 
+    if isinstance(fo, TaskCreate):
+        t = fo
+    elif isinstance(fo, dict):
+        t = TaskCreate.model_validate(fo)
+    elif isinstance(fo, str):
+        t = TaskCreate.model_validate_json(fo)
+    else:
+        raise HTTPException(400, f"Unexpected agent output type: {type(fo).__name__}")
+
+    '''
     try:
         t = TaskCreate.model_validate(obj)
     except Exception as e:
         raise HTTPException(400, f"Agent output failed schema validation: {e}")
+    '''
 
     payload = t.model_dump(exclude_none=True)
 
     payload['title'] = task.title
-    payload['description'] = task.description
+    payload['description'] = task.description if len(task.description) > 1 else payload['description']
     payload['priority'] = 10 if payload.get('priority') == None else payload['priority'] #can use "p['prio'] ==" if we are confident in pydantic
         
 
@@ -190,23 +198,60 @@ async def delete_user(
             status_code=500,
             detail=f"Error deleting user: {str(e)}"
         )
-
 '''
+async def run_task_gen_test(task):
+
+    AGENT_INSTRUCTIONS = f"""
+        You are a task planning assistant. You will receive a plaintext list of to-do items or goals.
+        Return a **JSON object** with exactly these snake_case fields:
+
+        {{
+            "title": string,
+            "description": string,
+            "ai_generated_subtasks": [string, ...],
+            "labels": [string, ...],
+            "deadline_type": "soft" | "hard" | null,
+            "due_date": string | null,          // ISO-8601 date or datetime
+            "priority": integer,         // integer between 1 and 10 (never null), lower numbers are higher priority
+        }}
+
+        HARD REQUIREMENTS:
+        - Output **only** a JSON object; no extra text, no markdown.
+        - Do NOT include: id, user_id, created_at.
+        - If a value is unknown, use null (do not invent).
+        - For relative dates like "next Friday", convert to an absolute ISO-8601 value using the current date.
+        Current local datetime: {datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()}
+        """
+
+    agent = Agent(name="TaskStructurer", instructions=AGENT_INSTRUCTIONS, output_type=TaskCreate)
+    agent_input = f"Task Title: {task}"
+    result = await Runner.run(agent, agent_input)
+
+
+    fo = result.final_output
+
+    if isinstance(fo, TaskCreate):
+        t = fo
+    elif isinstance(fo, dict):
+        t = TaskCreate.model_validate(fo)
+    elif isinstance(fo, str):
+        t = TaskCreate.model_validate_json(fo)
+    else:
+        raise HTTPException(400, f"Unexpected agent output type: {type(fo).__name__}")
+
+    payload = t.model_dump(exclude_none=True) 
+
+    #payload['title'] = task.title
+    #payload['description'] = task.description
+    payload['priority'] = 10 if payload.get('priority') == None else payload['priority'] #can use "p['prio'] ==" if we are confident in pydantic
+        
+    return payload
+
+
 def main():
-    input = """
-
-        So I am going on PAT leave on July 13th and will be returning on . Big priorities are
-        1: Get Q3 roadmaps done before July 13th for Analytics, Platform, Product usage and architecture
-        2: Setup Confluencd page for all the programs with the new template
-        2.a. Tableau Cloud
-        2.b   Harmony
-        2.c.  OSIC
-        2.d. WITS
-
-    ""
-    # runTaskGen("123e4567-e89b-12d3-a456-426614174000", input)
+    res = asyncio.run(run_task_gen_test("CS110 Test next friday"))
+    print(res)
 
 if __name__ == "__main__":
-    # main()
-    pass
+    main()
 '''

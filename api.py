@@ -141,7 +141,7 @@ async def run_task_gen(
 
     payload['title'] = task.title
     payload['description'] = task.description
-    payload['priority'] = 5 if payload.get('priority') == None else payload['priority'] #can use "p['prio'] ==" if we are confident in pydantic
+    payload['priority'] = 10 if payload.get('priority') == None else payload['priority'] #can use "p['prio'] ==" if we are confident in pydantic
         
 
     # if isinstance(payload.get("labels"), list):

@@ -64,7 +64,7 @@ class TaskCreate(BaseModel):
     labels: List[str] = Field(default_factory=list)
     deadline_type: Literal['soft', 'hard'] | None = None
     due_date: str | None = None
-    priority: int | None = Field(default=None, ge=1, le=10)
+    priority: int = Field(default=None, ge=1, le=10)
     # estimated_time: str | None = None
 
 class usr_task_in(BaseModel):
@@ -122,7 +122,7 @@ async def run_task_gen(
         Current local datetime: {datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()}
         """
 
-    agent = Agent(name="TaskStructurer", instructions=AGENT_INSTRUCTIONS, output_type=None)
+    agent = Agent(name="TaskStructurer", instructions=AGENT_INSTRUCTIONS, output_type=TaskCreate)
     agent_input = f"Task Title: {task.title}\nTask Description: {task.description}"
     result = await Runner.run(agent, agent_input)
 
